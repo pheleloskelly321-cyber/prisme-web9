@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prisme - Menu Digital</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;900&display=swap');
+        body { font-family: 'Outfit', sans-serif; background-color: #F8F9FA; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .cat-btn { transition: all 0.3s ease; }
+        .cat-btn.active { background: #F39C12; color: white; transform: scale(1.05); box-shadow: 0 8px 15px rgba(243, 156, 18, 0.3); }
+        .menu-card { animation: fadeInUp 0.5s ease backwards; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="pb-40">
+
+    <div id="restau-banner" class="relative h-64 w-full bg-cover bg-center bg-gray-300">
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+        <div class="absolute bottom-8 left-6 flex items-end space-x-4">
+            <img id="restau-logo" src="" class="w-24 h-24 rounded-[2rem] border-4 border-white shadow-2xl object-cover bg-white animate__animated animate__bounceIn">
+        </div>
+    </div>
+
+    <div class="px-6 -mt-6 relative z-10">
+        <div class="bg-white rounded-[2.5rem] p-6 shadow-xl border border-gray-100">
+            <h1 id="restau-nom" class="text-2xl font-black text-gray-800 uppercase tracking-tighter italic">Chargement...</h1>
+            <p id="restau-desc" class="text-gray-400 text-xs mt-1 font-medium"></p>
+            <div class="mt-4 flex items-center">
+                <span class="bg-green-500 text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest">Ouvert</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="sticky top-0 bg-[#F8F9FA]/90 backdrop-blur-md z-40 py-6">
+        <div class="flex overflow-x-auto space-x-3 px-6 no-scrollbar" id="category-bar">
+            <button onclick="filterMenu('Tout')" class="cat-btn active flex-shrink-0 px-8 py-3 rounded-2xl bg-white font-bold shadow-sm border">Tout</button>
+            </div>
+    </div>
+
+    <div id="menu-container" class="px-6 space-y-6"></div>
+
+    <div id="cart-float" class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-[#1A1A1A] rounded-[2.5rem] p-4 shadow-2xl flex justify-between items-center z-50 animate__animated animate__slideInUp">
+        <div class="flex items-center space-x-4 ml-2">
+            <div class="bg-orange-500 w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-500/30">
+                <i class="fa-solid fa-bag-shopping text-lg"></i>
+            </div>
+            <div>
+                <p class="text-gray-400 text-[10px] font-bold uppercase tracking-widest">Votre Total</p>
+                <p id="cart-total" class="text-white font-black text-xl">0 HTG</p>
+            </div>
+        </div>
+        <button onclick="ouvrirCommander()" class="bg-white text-black h-12 px-8 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-orange-500 hover:text-white transition-all">
+            Commander
+        </button>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyAkGlwDcUuIgz_F02Zoafm6dpv7uK8wtR8",
+            authDomain: "le-menu-20dd1.firebaseapp.com",
+            databaseURL: "https://le-menu-20dd1-default-rtdb.firebaseio.com",
+            projectId: "le-menu-20dd1",
+            storageBucket: "le-menu-20dd1.firebasestorage.app",
+            messagingSenderId: "359078423280",
+            appId: "1:359078423280:android:d9cc35af69d11ecaadb035"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const resID = urlParams.get('id') || 'lakay_gourmet_id'; 
+        
+        let allItems = {};
+        let cart = {};
+
+        // 1. RALE ENFO RESTORAN (Logo & Banner)
+        db.ref('users').orderByChild('restaurant_id').equalTo(resID).on('value', (snap) => {
+            const data = snap.val();
+            if(data) {
+                const info = Object.values(data)[0];
+                document.getElementById('restau-nom').innerText = info.full_name || "Restaurant";
+                document.getElementById('restau-desc').innerText = info.address || "";
+                document.getElementById('restau-logo').src = info.imageUrl || 'https://via.placeholder.com/150';
+                document.getElementById('restau-banner').style.backgroundImage = `url('${info.bannerUrl || ''}')`;
+            }
+        });
+
+        // 2. RALE MENU & KATEGORI
+        db.ref('restaurants/' + resID + '/menu').on('value', (snap) => {
+            allItems = snap.val() || {};
+            updateCategories(allItems);
+            renderMenu(allItems);
+        });
+
+        function updateCategories(items) {
+            const bar = document.getElementById('category-bar');
+            const cats = ['Tout', ...new Set(Object.values(items).map(i => i.categorie))];
+            bar.innerHTML = cats.map(c => `
+                <button onclick="filterMenu('${c}')" class="cat-btn ${c==='Tout'?'active':''} flex-shrink-0 px-8 py-3 rounded-2xl bg-white font-bold shadow-sm border">${c}</button>
+            `).join('');
+        }
+
+        function renderMenu(items) {
+            const container = document.getElementById('menu-container');
+            container.innerHTML = "";
+            
+            Object.keys(items).forEach((id, index) => {
+                const item = items[id];
+                const qte = cart[id] ? cart[id].qte : 0;
+                
+                container.innerHTML += `
+                    <div class="menu-card bg-white rounded-[2rem] p-4 shadow-sm flex items-center space-x-4" style="animation-delay: ${index * 0.1}s">
+                        <img src="${item.imageUrl || 'https://via.placeholder.com/150'}" class="w-24 h-24 rounded-[1.5rem] object-cover bg-gray-50">
+                        <div class="flex-1">
+                            <h3 class="font-bold text-gray-800">${item.nom}</h3>
+                            <p class="text-[10px] text-gray-400 italic">${item.description || ''}</p>
+                            <div class="mt-3 flex justify-between items-center">
+                                <span class="text-orange-500 font-black">${item.prix}</span>
+                                <div class="flex items-center space-x-3 bg-gray-50 p-1 rounded-xl">
+                                    <button onclick="updateCart('${id}', -1)" class="w-8 h-8 bg-white rounded-lg shadow-sm text-gray-400">-</button>
+                                    <span class="font-bold text-sm">${qte}</span>
+                                    <button onclick="updateCart('${id}', 1)" class="w-8 h-8 bg-orange-500 text-white rounded-lg shadow-md">+</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function updateCart(id, change) {
+            const item = allItems[id];
+            if (!cart[id]) {
+                cart[id] = { nom: item.nom, prix: parseFloat(item.prix), qte: 0 };
+            }
+            cart[id].qte += change;
+            if (cart[id].qte <= 0) delete cart[id];
+            
+            updateTotal();
+            renderMenu(allItems);
+        }
+
+        function updateTotal() {
+            let total = 0;
+            Object.values(cart).forEach(i => total += (i.prix * i.qte));
+            document.getElementById('cart-total').innerText = total + " HTG";
+        }
+
+        function filterMenu(cat) {
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if(cat === 'Tout') return renderMenu(allItems);
+            const filtered = Object.fromEntries(Object.entries(allItems).filter(([k, v]) => v.categorie === cat));
+            renderMenu(filtered);
+        }
+
+        // 3. FONKSYON KOMANDE (SweetAlert2)
+        async function ouvrirCommander() {
+            if (Object.keys(cart).length === 0) {
+                return Swal.fire({ icon: 'error', title: 'Oups!', text: 'Votre panier est vide.' });
+            }
+
+            const { value: table } = await Swal.fire({
+                title: 'Finaliser la commande',
+                input: 'number',
+                inputLabel: 'Numéro de votre table',
+                inputPlaceholder: 'Ex: 5',
+                confirmButtonText: 'Envoyer au chef',
+                confirmButtonColor: '#F39C12',
+                showCancelButton: true
+            });
+
+            if (table) {
+                const orderId = "ORDER_" + Date.now();
+                let totalStr = document.getElementById('cart-total').innerText;
+                
+                db.ref(`restaurants/${resID}/commandes/${orderId}`).set({
+                    items: cart,
+                    table: "Table " + table,
+                    statut: "nouveau",
+                    timestamp: Date.now(),
+                    total: totalStr
+                }).then(() => {
+                    Swal.fire('Succès!', 'Votre commande a été envoyée au restaurant.', 'success');
+                    cart = {};
+                    updateTotal();
+                    renderMenu(allItems);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
